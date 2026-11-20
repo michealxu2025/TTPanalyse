@@ -1,0 +1,11 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /invoices/{fileName} {
+      // 允许任何人上传发票
+      allow write: if true;
+      // 允许任何人读取发票
+      allow read: if true;
+    }
+  }
+}

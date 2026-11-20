@@ -1,0 +1,5 @@
+{
+  "name": "TTP销售数据分析",
+  "description": "一个功能强大的销售数据分析应用，支持对出库单、客户、销售员、品类等多维度的交互式分析，并集成 Gemini AI 提供智能商业洞察。",
+  "requestFramePermissions": []
+}
