@@ -103,6 +103,25 @@ const Dashboard: React.FC<DashboardProps> = ({ summary, filteredData, onSelectOr
     !activeMetrics.amount &&
     activeMetrics.quantity;
 
+  // 业绩增长趋势：按月视图下，单独查看「金额」或「数量」时在折线节点显示数值标签
+  const showMonthlyValueLabels =
+    timeGranularity === 'month' &&
+    ((activeMetrics.amount && !activeMetrics.quantity) ||
+      (!activeMetrics.amount && activeMetrics.quantity));
+
+  const formatMonthlyTrendLabel = (value: any, type: 'amount' | 'quantity'): string => {
+    if (value === null || value === undefined || value === '') return '';
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '';
+    if (trendMode !== 'total' && num === 0) return '';
+    if (type === 'amount') {
+      if (Math.abs(num) >= 1000000) return `${(num / 1000000).toFixed(2)}M`;
+      if (Math.abs(num) >= 1000) return `${Number((num / 1000).toFixed(1))}K`;
+      return Math.round(num).toLocaleString();
+    }
+    return Number.isInteger(num) ? num.toLocaleString() : Number(num.toFixed(1)).toLocaleString();
+  };
+
   const loadPlasticInventory = async () => {
     setInventoryLoading(true);
     setInventoryError(null);
@@ -1489,11 +1508,26 @@ const Dashboard: React.FC<DashboardProps> = ({ summary, filteredData, onSelectOr
               </div>
             )}
 
-            <div className="h-[450px] w-full mt-4">
+            <div className={`${showMonthlyValueLabels && trendMode === 'total' ? 'h-[480px]' : 'h-[450px]'} w-full mt-4`}>
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={trendAnalysis.data}>
+                <ComposedChart
+                  data={trendAnalysis.data}
+                  margin={{
+                    top: showMonthlyValueLabels ? (trendMode === 'total' ? 68 : 34) : 10,
+                    right: showMonthlyValueLabels ? 28 : 12,
+                    left: 10,
+                    bottom: 5
+                  }}
+                >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} minTickGap={20} />
+                  <XAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{fill: '#64748b', fontSize: 11}}
+                    minTickGap={showMonthlyValueLabels ? 6 : 20}
+                    padding={showMonthlyValueLabels ? { left: 26, right: 26 } : { left: 0, right: 0 }}
+                  />
                   {activeMetrics.amount && <YAxis yAxisId="amount" axisLine={false} tickLine={false} tick={{fill: '#6366f1', fontSize: 10, fontWeight: 700}} tickFormatter={(v) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : `${(v / 1000).toFixed(0)}K`} />}
                   {isDailyInventoryTriggered && matchedInventorySummary && matchedInventorySummary.matchedItems.length > 0 && (
                     <YAxis
@@ -1506,6 +1540,79 @@ const Dashboard: React.FC<DashboardProps> = ({ summary, filteredData, onSelectOr
                     />
                   )}
                   {activeMetrics.quantity && <YAxis yAxisId="quantity" orientation="right" axisLine={false} tickLine={false} tick={{fill: '#10b981', fontSize: 10, fontWeight: 700}} tickFormatter={(v) => v.toLocaleString()} />}
+
+                  {/* 按月单指标模式：将数值置于图表上方避开曲线，并以虚线贯通连接数据点与X轴对应月份 */}
+                  {showMonthlyValueLabels && trendAnalysis.data.map((row: any, idx: number) => {
+                    const metricType: 'amount' | 'quantity' = activeMetrics.amount ? 'amount' : 'quantity';
+                    const color = activeMetrics.amount ? '#6366f1' : '#10b981';
+
+                    if (trendMode !== 'total') {
+                      return (
+                        <ReferenceLine
+                          key={`month-guide-${row.name}`}
+                          x={row.name}
+                          yAxisId={metricType}
+                          zIndex={50}
+                          stroke="#cbd5e1"
+                          strokeDasharray="3 3"
+                          strokeOpacity={0.75}
+                        />
+                      );
+                    }
+
+                    const labelText = formatMonthlyTrendLabel(row[metricType], metricType);
+                    const isStaggered = trendAnalysis.data.length > 9;
+                    const labelY = isStaggered ? (idx % 2 === 0 ? 16 : 36) : 24;
+
+                    return (
+                      <ReferenceLine
+                        key={`month-guide-${row.name}`}
+                        x={row.name}
+                        yAxisId={metricType}
+                        zIndex={50}
+                        shape={(props: any) => {
+                          const lineX = Number(props.x1);
+                          const bottomY = Math.max(Number(props.y1), Number(props.y2));
+                          if (!Number.isFinite(lineX) || !Number.isFinite(bottomY)) return <g />;
+                          return (
+                            <g>
+                              <line
+                                x1={lineX}
+                                y1={labelY + 7}
+                                x2={lineX}
+                                y2={bottomY}
+                                stroke={color}
+                                strokeOpacity={0.38}
+                                strokeWidth={1.25}
+                                strokeDasharray="3 3"
+                              />
+                              {labelText && (
+                                <>
+                                  <circle
+                                    cx={lineX}
+                                    cy={labelY + 7}
+                                    r={2}
+                                    fill={color}
+                                    fillOpacity={0.75}
+                                  />
+                                  <text
+                                    x={lineX}
+                                    y={labelY}
+                                    textAnchor="middle"
+                                    fill={color}
+                                    fontSize={11}
+                                    fontWeight={800}
+                                  >
+                                    {labelText}
+                                  </text>
+                                </>
+                              )}
+                            </g>
+                          );
+                        }}
+                      />
+                    );
+                  })}
                   
                   {activeMetrics.amount && trendMode === 'total' && (
                     <ReferenceLine y={trendAnalysis.avgAmount} yAxisId="amount" stroke="#6366f1" strokeDasharray="4 4" strokeOpacity={0.6} label={{ position: 'insideBottomLeft', value: `平均: ${trendAnalysis.avgAmount >= 1000000 ? (trendAnalysis.avgAmount / 1000000).toFixed(2) + 'M' : (trendAnalysis.avgAmount / 1000).toFixed(0) + 'K'}`, fill: '#6366f1', fontSize: 11, fontWeight: 'bold' }} />
@@ -1523,7 +1630,61 @@ const Dashboard: React.FC<DashboardProps> = ({ summary, filteredData, onSelectOr
                   />
                   <Legend iconType="circle" />
                   {trendAnalysis.series.map((s) => (
-                    <Area key={s.key} yAxisId={s.type} type="monotone" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={s.dashed ? 2 : 3} strokeDasharray={s.dashed ? "5 5" : "0"} fill={s.color} fillOpacity={s.dashed ? 0 : 0.08} activeDot={{ r: 6, strokeWidth: 0 }} />
+                    <Area
+                      key={s.key}
+                      yAxisId={s.type}
+                      type="monotone"
+                      dataKey={s.key}
+                      name={s.name}
+                      stroke={s.color}
+                      strokeWidth={s.dashed ? 2 : 3}
+                      strokeDasharray={s.dashed ? "5 5" : "0"}
+                      fill={s.color}
+                      fillOpacity={s.dashed ? 0 : 0.08}
+                      dot={showMonthlyValueLabels ? { r: 4, fill: s.color, stroke: '#ffffff', strokeWidth: 2 } : false}
+                      activeDot={{ r: 6, strokeWidth: 0 }}
+                    >
+                      {showMonthlyValueLabels && trendMode !== 'total' && (
+                        <LabelList
+                          dataKey={s.key}
+                          content={(props: any) => {
+                            const px = Number(props.x);
+                            const py = Number(props.y);
+                            const labelText = formatMonthlyTrendLabel(props.value, s.type as 'amount' | 'quantity');
+                            if (!labelText || !Number.isFinite(px) || !Number.isFinite(py)) return null;
+                            const textY = Math.max(12, py - 18);
+                            return (
+                              <g>
+                                <line
+                                  x1={px}
+                                  y1={textY + 4}
+                                  x2={px}
+                                  y2={py - 5}
+                                  stroke={s.color}
+                                  strokeOpacity={0.5}
+                                  strokeWidth={1}
+                                  strokeDasharray="2 2"
+                                />
+                                <text
+                                  x={px}
+                                  y={textY}
+                                  textAnchor="middle"
+                                  fill={s.color}
+                                  fontSize={10}
+                                  fontWeight={800}
+                                  paintOrder="stroke"
+                                  stroke="#ffffff"
+                                  strokeWidth={3}
+                                  strokeLinejoin="round"
+                                >
+                                  {labelText}
+                                </text>
+                              </g>
+                            );
+                          }}
+                        />
+                      )}
+                    </Area>
                   ))}
                   {isDailyInventoryTriggered && matchedInventorySummary && matchedInventorySummary.matchedItems.length > 0 && (
                     <Line
